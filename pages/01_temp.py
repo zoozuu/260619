@@ -18,8 +18,8 @@ def load_seoul_data():
 
     df = "ta_20260619190504(1).csv"
 
-    df["날짜"] = (
-        df["날짜"]
+    df["일시"] = (
+        df["일시"]
         .astype(str)
         .str.replace("\t", "", regex=False)
     )
