@@ -16,7 +16,7 @@ st.set_page_config(
 @st.cache_data
 def load_seoul_data():
 
-    df = pd.read_csv("ta_20260619190504(1).csv")
+    df = "ta_20260619190504(1).csv"
 
     df["날짜"] = (
         df["날짜"]
