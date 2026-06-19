@@ -12,7 +12,7 @@ st.set_page_config(
 st.title("🌎 Climate Time Machine")
 st.caption("현재 전 세계 날씨를 서울의 과거 날씨와 비교합니다")
 
-CSV_URL = "https://github.com/zoozuu/260619/blob/main/ta_20260619190504.csv"
+CSV_URL = "ta_20260619190504.csv"
 
 # -------------------------------
 # 서울 데이터 로드
