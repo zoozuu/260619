@@ -9,62 +9,46 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🌎 세계 날씨와 서울 날씨 비교")
+st.title("🌎 전 세계 날씨와 서울 날씨 비교")
 
-uploaded_file = st.file_uploader(
-    "서울 기온 CSV 업로드",
-    type=["csv"]
-)
-
-if uploaded_file is None:
-    st.info("서울 기온 CSV를 업로드해주세요.")
-    st.stop()
-
-
+# ------------------------
+# 서울 기온 데이터 로드
+# ------------------------
 @st.cache_data
-def load_seoul_data(file):
+def load_seoul_data():
 
-    # 여러 형식 시도
-    try:
-        df = pd.read_csv(file, sep="\t", encoding="cp949")
-    except:
-        file.seek(0)
+    FILE_NAME = "ta_20260619190504.csv"   # 실제 파일명으로 수정
 
-        try:
-            df = pd.read_csv(file, encoding="cp949")
-        except:
-            file.seek(0)
-            df = pd.read_csv(file)
+    df = pd.read_csv(
+        FILE_NAME,
+        sep="\t",
+        encoding="cp949"
+    )
 
     df.columns = (
-        df.columns
-        .astype(str)
+        df.columns.astype(str)
         .str.strip()
         .str.replace('"', '')
     )
 
-    # 날짜 컬럼 찾기
+    # 컬럼명 자동 탐색
     date_col = None
-
-    for col in df.columns:
-        if "날" in col or "일시" in col:
-            date_col = col
-            break
-
-    if date_col is None:
-        st.error(f"날짜 컬럼을 찾을 수 없습니다.\n{df.columns.tolist()}")
-        st.stop()
-
-    # 평균기온 컬럼 찾기
     temp_col = None
 
     for col in df.columns:
+
+        if "날짜" in col or "일시" in col:
+            date_col = col
+
         if "평균기온" in col:
             temp_col = col
-            break
+
+    if date_col is None:
+        st.error(f"날짜 컬럼을 찾을 수 없음: {df.columns.tolist()}")
+        st.stop()
 
     if temp_col is None:
-        st.error(f"평균기온 컬럼을 찾을 수 없습니다.\n{df.columns.tolist()}")
+        st.error(f"평균기온 컬럼을 찾을 수 없음: {df.columns.tolist()}")
         st.stop()
 
     df[date_col] = (
@@ -81,77 +65,95 @@ def load_seoul_data(file):
 
     df = df.dropna(subset=[date_col])
 
+    df[temp_col] = pd.to_numeric(
+        df[temp_col],
+        errors="coerce"
+    )
+
     df["월일"] = df[date_col].dt.strftime("%m-%d")
 
     return df, date_col, temp_col
 
 
-seoul, date_col, temp_col = load_seoul_data(uploaded_file)
+seoul, date_col, temp_col = load_seoul_data()
 
-st.success("서울 기온 데이터 로드 완료")
-
+# ------------------------
+# 전 세계 주요 도시
+# ------------------------
 cities = [
-    ("Seoul",37.5665,126.9780),
-    ("Tokyo",35.6762,139.6503),
-    ("Beijing",39.9042,116.4074),
-    ("Shanghai",31.2304,121.4737),
-    ("Bangkok",13.7563,100.5018),
-    ("Singapore",1.3521,103.8198),
-    ("Sydney",-33.8688,151.2093),
-    ("London",51.5072,-0.1276),
-    ("Paris",48.8566,2.3522),
-    ("Berlin",52.5200,13.4050),
-    ("Rome",41.9028,12.4964),
-    ("Madrid",40.4168,-3.7038),
-    ("Moscow",55.7558,37.6173),
-    ("New York",40.7128,-74.0060),
-    ("Chicago",41.8781,-87.6298),
-    ("Los Angeles",34.0522,-118.2437),
-    ("Toronto",43.6510,-79.3470),
-    ("Mexico City",19.4326,-99.1332),
-    ("Rio",-22.9068,-43.1729),
-    ("Buenos Aires",-34.6037,-58.3816),
-    ("Cape Town",-33.9249,18.4241),
-    ("Cairo",30.0444,31.2357),
-    ("Dubai",25.2048,55.2708),
-    ("Mumbai",19.0760,72.8777),
+    ("Seoul",37.56,126.97),
+    ("Tokyo",35.68,139.76),
+    ("Beijing",39.90,116.40),
+    ("Shanghai",31.23,121.47),
+    ("Hong Kong",22.31,114.17),
+    ("Bangkok",13.75,100.50),
+    ("Singapore",1.35,103.82),
+    ("Sydney",-33.86,151.21),
+    ("London",51.50,-0.12),
+    ("Paris",48.85,2.35),
+    ("Berlin",52.52,13.40),
+    ("Rome",41.90,12.49),
+    ("Madrid",40.41,-3.70),
+    ("Moscow",55.75,37.61),
+    ("Dubai",25.20,55.27),
+    ("Mumbai",19.07,72.87),
+    ("Cairo",30.04,31.23),
+    ("Cape Town",-33.92,18.42),
+    ("New York",40.71,-74.00),
+    ("Chicago",41.87,-87.62),
+    ("Los Angeles",34.05,-118.24),
+    ("Toronto",43.65,-79.38),
+    ("Mexico City",19.43,-99.13),
+    ("Rio",-22.90,-43.17),
+    ("Buenos Aires",-34.60,-58.38),
 ]
 
+# ------------------------
+# Open-Meteo 실시간 날씨
+# ------------------------
 @st.cache_data(ttl=1800)
 def get_weather():
 
-    rows = []
+    data = []
 
     for city, lat, lon in cities:
 
         try:
 
             url = (
-                "https://api.open-meteo.com/v1/forecast"
-                f"?latitude={lat}"
+                f"https://api.open-meteo.com/v1/forecast?"
+                f"latitude={lat}"
                 f"&longitude={lon}"
-                "&current=temperature_2m"
+                f"&current=temperature_2m"
             )
 
-            r = requests.get(url, timeout=10)
+            response = requests.get(
+                url,
+                timeout=10
+            )
 
-            temp = r.json()["current"]["temperature_2m"]
+            temp = response.json()["current"]["temperature_2m"]
 
-            rows.append({
-                "city": city,
-                "lat": lat,
-                "lon": lon,
-                "temp": temp
-            })
+            data.append(
+                {
+                    "city": city,
+                    "lat": lat,
+                    "lon": lon,
+                    "temp": temp
+                }
+            )
 
         except:
             pass
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(data)
 
 weather = get_weather()
 
-def find_similar_seoul(temp):
+# ------------------------
+# 서울에서 가장 비슷한 날 찾기
+# ------------------------
+def find_similar_day(temp):
 
     idx = (
         seoul[temp_col] - temp
@@ -170,16 +172,19 @@ diffs = []
 
 for temp in weather["temp"]:
 
-    d, t = find_similar_seoul(temp)
+    date, seoul_temp = find_similar_day(temp)
 
-    similar_dates.append(d)
-    similar_temps.append(round(t, 1))
-    diffs.append(round(abs(t-temp), 1))
+    similar_dates.append(date)
+    similar_temps.append(round(seoul_temp, 1))
+    diffs.append(round(abs(temp - seoul_temp), 1))
 
 weather["서울유사날짜"] = similar_dates
 weather["서울기온"] = similar_temps
 weather["차이"] = diffs
 
+# ------------------------
+# Plotly Globe
+# ------------------------
 fig = go.Figure()
 
 fig.add_trace(
@@ -193,7 +198,7 @@ fig.add_trace(
             color=weather["temp"],
             colorscale="Turbo",
             colorbar=dict(
-                title="현재기온(°C)"
+                title="현재기온"
             )
         ),
         customdata=np.stack(
@@ -206,11 +211,11 @@ fig.add_trace(
             axis=1
         ),
         hovertemplate=
-        "<b>%{text}</b><br><br>" +
-        "현재 기온: %{customdata[0]}°C<br>" +
-        "서울과 비슷한 날짜: %{customdata[1]}<br>" +
-        "그날 서울 기온: %{customdata[2]}°C<br>" +
-        "차이: %{customdata[3]}°C" +
+        "<b>%{text}</b><br><br>"
+        "현재기온: %{customdata[0]}°C<br>"
+        "서울과 가장 비슷한 날: %{customdata[1]}<br>"
+        "그날 서울 기온: %{customdata[2]}°C<br>"
+        "차이: %{customdata[3]}°C"
         "<extra></extra>"
     )
 )
@@ -218,17 +223,17 @@ fig.add_trace(
 fig.update_geos(
     projection_type="orthographic",
     showland=True,
-    landcolor="rgb(50,80,50)",
+    landcolor="rgb(60,100,60)",
     showocean=True,
-    oceancolor="rgb(10,30,80)"
+    oceancolor="rgb(20,40,100)"
 )
 
 fig.update_layout(
-    height=800,
+    height=850,
     margin=dict(
         l=0,
         r=0,
-        t=30,
+        t=20,
         b=0
     )
 )
@@ -238,7 +243,7 @@ st.plotly_chart(
     use_container_width=True
 )
 
-st.subheader("현재 세계 날씨")
+st.subheader("현재 도시별 날씨")
 
 st.dataframe(
     weather.sort_values("차이")
